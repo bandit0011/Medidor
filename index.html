@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datos ThingSpeak</title>
+    
+    <!-- Incluimos la librería de Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 20px;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        .chart-container {
+            width: 90%;
+            max-width: 700px;
+            margin: 20px auto;
+        }
+        .controls {
+            text-align: center;
+            margin-top: 10px;
+        }
+        @media (max-width: 768px) {
+            .chart-container {
+                width: 100%;
+            }
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            background-color: #4CAF50;
+            color: white;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #recordSection {
+            display: none;
+            max-width: 700px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        #recordSection table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #recordSection table, th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Visualización de Datos con ThingSpeak</h1>
+    
+    <div class="chart-container">
+        <canvas id="currentChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="voltageChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="powerChart"></canvas>
+    </div>
+
+    <div class="controls">
+        <button id="pauseButton">Pausar Actualización</button>
+        <button id="resumeButton" disabled>Reanudar Actualización</button>
+        <button id="recordButton">Ir al Registro</button>
+    </div>
+
+    <div id="recordSection">
+        <h2>Registro de Uso de Energía</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Fecha y Hora</th>
+                    <th>Corriente (A)</th>
+                    <th>Voltaje (V)</th>
+                    <th>Potencia (W)</th>
+                </tr>
+            </thead>
+            <tbody id="recordTableBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        const apiKey = '0UU08QNI5IPVG4AB';
+        const channelId = '2701710';
+        
+        let updateInterval;
+        let isPaused = false;
+
+        async function getThingSpeakData() {
+            const url = `https://api.thingspeak.com/channels/${channelId}/feeds.json?api_key=${apiKey}&results=10`;
+            const response = await fetch(url);
+            const data = await response.json();
+            return data.feeds;
+        }
+
+        async function createCharts() {
+            const feeds = await getThingSpeakData();
+            
+            const labels = feeds.map(feed => new Date(feed.created_at).toLocaleString());
+            const dataPointsField1 = feeds.map(feed => parseFloat(feed.field1));
+            const dataPointsField2 = feeds.map(feed => parseFloat(feed.field2));
+            const powerDataPoints = dataPointsField1.map((current, index) => current * dataPointsField2[index]);
+
+            saveToLocalStorage(feeds); // Guardamos los datos en localStorage
+
+            const ctxCurrent = document.getElementById('currentChart').getContext('2d');
+            const ctxVoltage = document.getElementById('voltageChart').getContext('2d');
+            const ctxPower = document.getElementById('powerChart').getContext('2d');
+            
+            if (window.myCurrentChart) {
+                window.myCurrentChart.data.labels = labels;
+                window.myCurrentChart.data.datasets[0].data = dataPointsField1;
+                window.myCurrentChart.update();
+            } else {
+                window.myCurrentChart = new Chart(ctxCurrent, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Corriente (Field 1)',
+                            data: dataPointsField1,
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { display: true, title: { display: true, text: 'Tiempo' } },
+                            y: { display: true, title: { display: true, text: 'Corriente (A)' } }
+                        }
+                    }
+                });
+            }
+
+            if (window.myVoltageChart) {
+                window.myVoltageChart.data.labels = labels;
+                window.myVoltageChart.data.datasets[0].data = dataPointsField2;
+                window.myVoltageChart.update();
+            } else {
+                window.myVoltageChart = new Chart(ctxVoltage, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Voltaje (Field 2)',
+                            data: dataPointsField2,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { display: true, title: { display: true, text: 'Tiempo' } },
+                            y: { display: true, title: { display: true, text: 'Voltaje (V)' } }
+                        }
+                    }
+                });
+            }
+
+            if (window.myPowerChart) {
+                window.myPowerChart.data.labels = labels;
+                window.myPowerChart.data.datasets[0].data = powerDataPoints;
+                window.myPowerChart.update();
+            } else {
+                window.myPowerChart = new Chart(ctxPower, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Potencia (W)',
+                            data: powerDataPoints,
+                            backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                            borderColor: 'rgba(255, 159, 64, 1)',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { display: true, title: { display: true, text: 'Tiempo' } },
+                            y: { display: true, title: { display: true, text: 'Potencia (W)' } }
+                        }
+                    }
+                });
+            }
+        }
+
+        function saveToLocalStorage(feeds) {
+            let records = JSON.parse(localStorage.getItem('energyRecords')) || [];
+            feeds.forEach(feed => {
+                const record = {
+                    date: new Date(feed.created_at).toLocaleString(),
+                    current: parseFloat(feed.field1),
+                    voltage: parseFloat(feed.field2),
+                    power: parseFloat(feed.field1) * parseFloat(feed.field2)
+                };
+                records.push(record);
+            });
+            localStorage.setItem('energyRecords', JSON.stringify(records));
+        }
+
+        function displayRecords() {
+            const recordSection = document.getElementById('recordSection');
+            const recordTableBody = document.getElementById('recordTableBody');
+            recordTableBody.innerHTML = '';
+            const records = JSON.parse(localStorage.getItem('energyRecords')) || [];
+
+            records.forEach(record => {
+                const row = `<tr>
+                    <td>${record.date}</td>
+                    <td>${record.current} A</td>
+                    <td>${record.voltage} V</td>
+                    <td>${record.power} W</td>
+                </tr>`;
+                recordTableBody.insertAdjacentHTML('beforeend', row);
+            });
+            recordSection.style.display = 'block';
+        }
+
+        function startAutoUpdate() {
+            updateInterval = setInterval(createCharts, 15000);
+        }
+
+        function stopAutoUpdate() {
+            clearInterval(updateInterval);
+        }
+
+        document.getElementById('pauseButton').addEventListener('click', function() {
+            stopAutoUpdate();
+            isPaused = true;
+            this.disabled = true;
+            document.getElementById('resumeButton').disabled = false;
+        });
+
+        document.getElementById('resumeButton').addEventListener('click', function() {
+            startAutoUpdate();
+            isPaused = false;
+            this.disabled = true;
+            document.getElementById('pauseButton').disabled = false;
+        });
+
+        document.getElementById('recordButton').addEventListener('click', displayRecords);
+
+        createCharts();
+        startAutoUpdate();
+    </script>
+
+</body>
+</html>
