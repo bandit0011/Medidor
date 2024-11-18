@@ -228,7 +228,8 @@
             recordTableBody.innerHTML = '';
             const records = JSON.parse(localStorage.getItem('energyRecords')) || [];
 
-            records.forEach(record => {
+            // Mostrar los registros más recientes primero
+            records.reverse().forEach(record => {
                 const row = `<tr>
                     <td>${record.date}</td>
                     <td>${record.current} A</td>
